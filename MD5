@@ -1,5 +1,5 @@
-a5f3437f60fb0569364af33a6b687efa *DESCRIPTION
-c68388f5f737bd15edcf4af538b64655 *NAMESPACE
+b900fb284f08007f46c73458049731d2 *DESCRIPTION
+aa381abc14b7ee8c3aac1fba12f0abf3 *NAMESPACE
 fdc680e9762eea50e3b6ebe6c8d4f334 *R/adjLibrarySize.R
 e10e7db4221fedb1ea17f64fa200c8cb *R/buildKNN.R
 06e69b7e6843afa804678e4eb692e5bb *R/buildKNND.R
@@ -20,7 +20,7 @@ b648af189bbdd14c390ef2a70b91f58c *R/runPANDA.R
 77b4bd4e88943ca25453cdffbaedb0d2 *R/scorpion.R
 5a93b021350fdaea8175f0070f82a02f *R/spreadNet.R
 48af53c0991f3ce395e8b07ff486d240 *R/tanimotoSimilarity.R
-069330f745d6ceab905ccc3954fb63e4 *R/testEdges.R
+c1821f68613816c7aa5f2b35246c9d67 *R/testEdges.R
 2dbc6c8720b8351b63665a1a310ee22f *R/updateDiagonal.R
 5db9dc3f4052467f89823a8dfebe6663 *data/datalist
 d2298ecddec37da1dce927636548b2d4 *data/scorpionTest.RData
@@ -30,4 +30,4 @@ dce5ede3234c960c5da9c7b8bcb746a8 *man/regressEdges.Rd
 22d370c8cd30a51b412d10e0b3e03550 *man/runSCORPION.Rd
 8bddbea8b94282217cb2c0e3fb5341b7 *man/scorpion.Rd
 704e01a6652e4c314f9ed082e9f8f1dd *man/scorpionTest.Rd
-faa356881e24dfd8874b6455e299fbcd *man/testEdges.Rd
+19914a4b4530df18df2a4ce3daa2e0cf *man/testEdges.Rd
