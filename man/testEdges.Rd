@@ -12,9 +12,11 @@ testEdges(
   paired = FALSE,
   alternative = c("two.sided", "greater", "less"),
   padjustMethod = "BH",
-  minLog2FC = 1e-16,
+  minLog2FC = 0,
   moderateVariance = TRUE,
-  empiricalNull = TRUE
+  empiricalNull = TRUE,
+  nCores = 1L,
+  batchSize = NULL
 )
 }
 \arguments{
@@ -48,7 +50,7 @@ testing correction. See \code{\link[stats]{p.adjust}} for options. Default "BH"
 \item{minLog2FC}{Numeric threshold for minimum absolute log2 fold change to
 include in testing. For two-sample and paired tests, edges with |log2FoldChange|
 below this threshold are excluded. Not applicable for single-sample tests.
-Default 1e-16.}
+Default 0.}
 
 \item{moderateVariance}{Logical indicating whether to apply SAM-style variance
 moderation. When TRUE, adds a fudge factor (s0, the median of all standard errors)
@@ -62,6 +64,16 @@ empirically from the observed t-statistics. When TRUE, uses the median and MAD
 then computes p-values from the standard normal. This is Efron's empirical null
 correction (as in locfdr) and is essential when testing millions of correlated
 edges. Runs in O(n) time. Default TRUE.}
+
+\item{nCores}{Integer specifying the number of parallel workers. Default 1
+(sequential processing). When greater than 1, edges are split into batches and
+processed in parallel using \code{furrr::future_map_dfr}. Requires the
+\pkg{furrr} and \pkg{future} packages to be installed.}
+
+\item{batchSize}{Integer specifying the number of edges (rows) per batch for
+parallel processing. Default NULL, which auto-calculates as
+\code{ceiling(nrow(networksDF) / nCores)}. Only used when \code{nCores > 1}.
+Smaller batch sizes use less memory per worker but add communication overhead.}
 }
 \value{
 A data.frame containing:
