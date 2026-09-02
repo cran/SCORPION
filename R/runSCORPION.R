@@ -1,5 +1,6 @@
 #' @title Run SCORPION across cell groups and return combined networks
 #' @description Builds per-group regulatory networks by running \code{\link{scorpion}} on subsets of cells defined by \code{cellsMetadata} and combining the resulting networks into a wide-format data frame where each column corresponds to a network.
+#' @author Daniel Osorio <daniecos@uio.no>
 #' @param gexMatrix An expression dataset with genes in the rows and barcodes (cells) in the columns.
 #' @param tfMotifs A motif dataset, a data.frame or a matrix containing 3 columns. Each row describes a motif associated with a transcription factor (column 1) a gene (column 2) and a score (column 3).
 #' @param ppiNet A Protein-Protein-Interaction dataset, a data.frame or matrix containing 3 columns. Each row describes a protein-protein interaction between transcription factor 1 (column 1), transcription factor 2 (column 2) and a score (column 3).
@@ -17,13 +18,14 @@
 #' @param alphaValue Value to be used for update variable in PANDA. Default 0.1.
 #' @param hammingValue Value at which to terminate the process based on Hamming distance. Default 0.001.
 #' @param nIter Sets the maximum number of iterations PANDA can run before exiting. Default Inf.
-#' @param outNet Character specifying which network to extract. Options include "regNet", "coregNet", "coopNet". Default "regNet".
+#' @param outNet Character vector specifying which network(s) to extract. Options include "regNet", "coregNet", "coopNet". Default "regNet". When more than one network is requested, an \code{edge_type} column ("tf-target", "gene-gene", "tf-tf") is added and the networks are stacked in long format.
 #' @param zScaling Boolean to indicate use of Z-Scores in output. FALSE will use [0,1] scale. Default TRUE.
 #' @param showProgress Boolean to indicate printing of output for algorithm progress. Default TRUE.
 #' @param randomizationMethod Method by which to randomize gene expression matrix. Default "None". Must be one of "None", "within.gene", "by.gene".
 #' @param scaleByPresent Boolean to indicate scaling of correlations by percentage of positive samples. Default FALSE.
 #' @param filterExpr Boolean to indicate whether or not to remove genes with 0 expression across all cells. Default FALSE.
-#' @return A data.frame in wide format where rows represent TF-target pairs (union across all networks) and columns represent network identifiers. Cell values are edge weights from the corresponding network.
+#' @return A data.frame in wide format where rows represent TF-target pairs (union across all networks) and columns represent network identifiers. Cell values are edge weights from the corresponding network. When multiple network types are requested via \code{outNet}, an additional leading \code{edge_type} column identifies the network each row comes from and the network types are stacked in long format.
+#' @seealso \code{\link{scorpion}}, \code{\link{testEdges}}, \code{\link{regressEdges}}
 #' @details
 #' This function is a wrapper around \code{\link{scorpion}} that groups cells according to metadata columns, filters out groups with insufficient cells, runs network inference on each remaining group independently, and finally combines all resulting networks into a single wide-format data frame.
 #' @examples
@@ -234,9 +236,20 @@ runSCORPION <- function(gexMatrix,
   if (alphaValue < 0 || alphaValue > 1) {
     cli::cli_abort("alphaValue must be a numeric value between 0 and 1")
   }
+  validNets <- c("regNet", "coregNet", "coopNet")
+  if (length(outNet) < 1 || !all(outNet %in% validNets)) {
+    cli::cli_abort("outNet must be one or more of: {paste(validNets, collapse=', ')}")
+  }
 
   if (showProgress) {
     cli::cli_h1("SCORPION")
+  }
+
+  # Control BLAS threading to respect nCores
+  if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+    old_blas <- RhpcBLASctl::blas_get_num_procs()
+    RhpcBLASctl::blas_set_num_threads(nCores)
+    on.exit(RhpcBLASctl::blas_set_num_threads(old_blas), add = TRUE)
   }
 
   # Normalizing data
@@ -259,12 +272,20 @@ runSCORPION <- function(gexMatrix,
     gexMatrix <- remove_batch(X = gexMatrix, batch = batch)
     gexMatrix <- gexMatrix + mean_expr
   }
+  rm(batch)
+
+  # Pre-convert to data.frame once so workers receive the converted objects
+  # instead of converting on every call
+  tfMotifs <- as.data.frame(tfMotifs)
+  ppiNet <- as.data.frame(ppiNet)
 
   # Setting min number of cells to construct network
   min_cells <- max(minCells, 30)
 
   if (all(groupBy %in% colnames(cellsMetadata))) {
-    collapsedGroup = apply(cellsMetadata[, groupBy, drop = FALSE], 1, function(X) { paste0(X, collapse = '--') })
+    # Vectorized row-wise concatenation of the grouping columns; avoids the
+    # per-row apply() closure over cellsMetadata.
+    collapsedGroup <- do.call(paste, c(cellsMetadata[, groupBy, drop = FALSE], sep = "--"))
     metadata <- data.frame(cell_id = colnames(gexMatrix), network_id = collapsedGroup)
     metadata <- metadata %>%
       group_by(.data$network_id) %>%
@@ -272,6 +293,7 @@ runSCORPION <- function(gexMatrix,
   } else {
     cli::cli_abort('groupBy must match cellsMetadata column name')
   }
+  rm(cellsMetadata)
 
   total_net <- length(unique(metadata$network_id))
   metadata <- metadata %>% filter(.data$n_cells >= min_cells)
@@ -282,17 +304,26 @@ runSCORPION <- function(gexMatrix,
     cli::cli_alert_success(paste0(filtered_net, " networks meet the minimum cell requirement (", min_cells, ")"))
   }
 
-  compute_network <- function(idx) {
-    selected_network <- network_ids[idx]
+  if (filtered_net == 0) {
+    cli::cli_abort("No groups have enough cells (>= {min_cells}) to build a network")
+  }
 
-    selected_cells <- metadata %>%
-      filter(.data$network_id %in% selected_network)
-    selected_cells <- gexMatrix[, selected_cells$cell_id]
+  network_ids <- unique(metadata$network_id)
 
+  # Pre-split gexMatrix into per-group chunks so each worker only receives
+  # the subset it needs, instead of the full matrix. Cells are grouped in a
+  # single pass with split() rather than rescanning metadata per network.
+  cells_by_network <- split(metadata$cell_id, metadata$network_id)
+  gex_chunks <- lapply(network_ids, function(nid) {
+    gexMatrix[, cells_by_network[[nid]], drop = FALSE]
+  })
+  rm(gexMatrix, metadata, cells_by_network)
+
+  compute_network <- function(gex_chunk) {
     network <- scorpion(
-      gexMatrix = selected_cells,
-      tfMotifs = as.data.frame(tfMotifs),
-      ppiNet = as.data.frame(ppiNet),
+      gexMatrix = gex_chunk,
+      tfMotifs = tfMotifs,
+      ppiNet = ppiNet,
       computingEngine = computingEngine,
       nCores = 1,
       gammaValue = gammaValue,
@@ -307,18 +338,39 @@ runSCORPION <- function(gexMatrix,
       randomizationMethod = randomizationMethod,
       scaleByPresent = scaleByPresent,
       filterExpr = filterExpr
-    )[[outNet]]
-    
-    return(network)
+    )
+
+    # Return a single matrix when one network is requested, otherwise a
+    # named list of the requested network matrices.
+    if (length(outNet) == 1L) {
+      return(network[[outNet]])
+    }
+    return(network[outNet])
   }
 
-  network_ids <- unique(metadata$network_id)
+  # The TF-motif prior and PPI network are broadcast to every parallel worker.
+  # If the optional 'mori' package is available, place them in OS-backed shared
+  # memory so workers map the same physical pages instead of each receiving a
+  # full serialized copy. Falls back to standard serialization when absent, or
+  # when disabled via options(scorpion.use_mori = FALSE).
+  use_mori <- nCores > 1 &&
+    isTRUE(getOption("scorpion.use_mori", TRUE)) &&
+    requireNamespace("mori", quietly = TRUE)
+  if (use_mori) {
+    if (!is.null(tfMotifs)) tfMotifs <- mori::share(tfMotifs)
+    if (!is.null(ppiNet)) ppiNet <- mori::share(ppiNet)
+  }
 
-  old_maxSize <- getOption("future.globals.maxSize")
-  options(future.globals.maxSize = 1024 * 1024^2)
-  on.exit(options(future.globals.maxSize = old_maxSize), add = TRUE)
+  furrr_opts <- furrr::furrr_options(
+    seed = TRUE,
+    packages = if (use_mori) "mori" else NULL
+  )
 
   if (nCores > 1) {
+    # Allow arbitrarily large globals to be exported to workers.
+    old_maxsize <- getOption("future.globals.maxSize")
+    options(future.globals.maxSize = Inf)
+    on.exit(options(future.globals.maxSize = old_maxsize), add = TRUE)
     old_plan <- future::plan(future::multisession, workers = nCores)
     on.exit(future::plan(old_plan), add = TRUE)
   } else {
@@ -326,39 +378,106 @@ runSCORPION <- function(gexMatrix,
     on.exit(future::plan(old_plan), add = TRUE)
   }
 
+  n_total <- length(gex_chunks)
+
   if (showProgress) {
-    cli::cli_alert_info("Computing networks")
+    cli::cli_alert_info(paste0("Computing ", n_total, " networks"))
     if (nCores > 1) {
       cli::cli_alert_info(paste0("Using ", nCores, " cores for parallel processing"))
+      network_matrices <- furrr::future_map(gex_chunks, compute_network, .options = furrr_opts, .progress = FALSE)
+    } else {
+      network_matrices <- vector("list", n_total)
+      for (i in seq_len(n_total)) {
+        cli::cli_alert_info(paste0("Network ", i, "/", n_total, ": ", network_ids[i]))
+        network_matrices[[i]] <- compute_network(gex_chunks[[i]])
+      }
     }
-    network_matrices <- furrr::future_map(seq_along(network_ids), compute_network, .options = furrr::furrr_options(seed = TRUE), .progress = TRUE)
     cli::cli_alert_success("Networks successfully constructed")
   } else {
-    network_matrices <- furrr::future_map(seq_along(network_ids), compute_network, .options = furrr::furrr_options(seed = TRUE), .progress = TRUE)
+    network_matrices <- furrr::future_map(gex_chunks, compute_network, .options = furrr_opts, .progress = FALSE)
+  }
+  rm(gex_chunks)
+
+  n_nets <- length(network_matrices)
+
+  if (length(outNet) == 1L) {
+    # Single network type: wide format with tf, target and one column per group.
+    # Build TF-target pairs from first network
+    # Coerce to a base matrix so as.table works even if a network is an S4 Matrix
+    first_net <- as.matrix(network_matrices[[1]])
+    # Build TF-target pairs directly from the dimnames instead of materializing
+    # a full contingency table via as.table(); same column-major ordering as
+    # the as.vector() extraction below.
+    tf_target_df <- expand.grid(
+      tf = rownames(first_net),
+      target = colnames(first_net),
+      KEEP.OUT.ATTRS = FALSE,
+      stringsAsFactors = FALSE
+    )
+    n_edges <- length(first_net)
+    rm(first_net)
+
+    # Stream extraction: pull each network's weights into pre-allocated matrix,
+    # then NULL out the list element immediately to free memory.
+    weight_matrix <- matrix(NA_real_, nrow = n_edges, ncol = n_nets)
+    colnames(weight_matrix) <- network_ids
+    for (k in seq_len(n_nets)) {
+      weight_matrix[, k] <- as.vector(network_matrices[[k]])
+      network_matrices[k] <- list(NULL)
+    }
+    rm(network_matrices)
+
+    # Combine into final data frame
+    networks <- data.frame(
+      tf = as.character(tf_target_df$tf),
+      target = as.character(tf_target_df$target),
+      weight_matrix,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  } else {
+    # Multiple network types: stack each type in long format and prepend an
+    # edge_type column identifying the network each block of rows comes from.
+    edge_type_labels <- c(
+      regNet = "tf-target",
+      coregNet = "gene-gene",
+      coopNet = "tf-tf"
+    )
+
+    per_type <- lapply(outNet, function(net_name) {
+      # Node pairs are specific to each network type (TFs x genes, genes x
+      # genes or TFs x TFs), so rebuild them from the first group's network.
+      first_net <- as.matrix(network_matrices[[1]][[net_name]])
+      pair_df <- expand.grid(
+        tf = rownames(first_net),
+        target = colnames(first_net),
+        KEEP.OUT.ATTRS = FALSE,
+        stringsAsFactors = FALSE
+      )
+      n_edges <- length(first_net)
+      rm(first_net)
+
+      weight_matrix <- matrix(NA_real_, nrow = n_edges, ncol = n_nets)
+      colnames(weight_matrix) <- network_ids
+      for (k in seq_len(n_nets)) {
+        weight_matrix[, k] <- as.vector(network_matrices[[k]][[net_name]])
+      }
+
+      data.frame(
+        edge_type = edge_type_labels[[net_name]],
+        tf = as.character(pair_df$tf),
+        target = as.character(pair_df$target),
+        weight_matrix,
+        stringsAsFactors = FALSE,
+        check.names = FALSE
+      )
+    })
+    rm(network_matrices)
+
+    networks <- do.call(rbind, per_type)
+    rownames(networks) <- NULL
   }
 
-  # Build TF-target pairs from first network using same method as before
-  first_net <- network_matrices[[1]]
-  tf_target_df <- as.data.frame(as.table(first_net))[, 1:2]
-  colnames(tf_target_df) <- c("tf", "target")
-  
-  # Extract weights as vectors (column-major order matches as.table order)
-  weight_matrix <- vapply(
-    network_matrices,
-    as.vector,
-    numeric(length(first_net))
-  )
-  colnames(weight_matrix) <- network_ids
-  
-  # Combine into final data frame
-  networks <- data.frame(
-    tf = as.character(tf_target_df$tf),
-    target = as.character(tf_target_df$target),
-    weight_matrix,
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
-  
   if (showProgress) {
     cli::cli_alert_success("Networks successfully combined")
   }

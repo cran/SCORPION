@@ -148,19 +148,28 @@ scorpion <- function(tfMotifs = NULL,
     cli::cli_h1("SCORPION")
   }
 
+  # Control BLAS threading to respect nCores
+  if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+    old_blas <- RhpcBLASctl::blas_get_num_procs()
+    RhpcBLASctl::blas_set_num_threads(nCores)
+    on.exit(RhpcBLASctl::blas_set_num_threads(old_blas), add = TRUE)
+  }
+
   if (isTRUE(filterExpr)) {
     gexMatrix <- gexMatrix[rowSums(gexMatrix) > 0, ]
   }
   gexMatrix <- makeSuperCells(X = gexMatrix, gamma = gammaValue, n.pc = nPC, fast.pca = FALSE)
 
   if (is.null(ppiNet) & is.null(tfMotifs)) {
+    # Densify once; centering already destroys sparsity, so keep a single dense
+    # base copy and use BLAS tcrossprod (dsyrk) for the co-expression matrix.
+    gexMatrix <- as.matrix(gexMatrix)
     if (assocMethod == "spearman") {
-      gexMatrix <- Matrix(t(apply(gexMatrix, 1, rank)))
+      gexMatrix <- t(apply(gexMatrix, 1, rank))
     }
     geneCoExpr <- gexMatrix - rowMeans(gexMatrix)
     geneCoExpr <- geneCoExpr / sqrt(rowSums(geneCoExpr^2))
-    geneCoExpr <- tcrossprod(geneCoExpr)
-    return(geneCoExpr)
+    return(tcrossprod(geneCoExpr))
   }
   outNetworks <- runPANDA(
     motif = tfMotifs,
