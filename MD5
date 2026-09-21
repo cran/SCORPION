@@ -1,4 +1,4 @@
-c9ba1770a32544a2521ec8e9ee76ea2d *DESCRIPTION
+6554e1ca956c2780d2b80389896a61de *DESCRIPTION
 43bf35ec38c741a6972e1e8c5495aecd *NAMESPACE
 fdc680e9762eea50e3b6ebe6c8d4f334 *R/adjLibrarySize.R
 e10e7db4221fedb1ea17f64fa200c8cb *R/buildKNN.R
@@ -20,14 +20,14 @@ ba7e12bae9dac08c582f0312af490de7 *R/regressEdges.R
 457c3fa963094aff709c7024eecef21b *R/removeBatch.R
 db459c473dcc11bd0a53f2ef8ed6652a *R/rowSds.R
 12fa74ad36485c504901c56fe4abcac5 *R/runPANDA.R
-8e34ea3077e9d46193b93c4ce63faeb3 *R/runSCORPION.R
+02a63bb4b818d3678b4950207208828f *R/runSCORPION.R
 608d730bf0bd3ef3acd7d85f7b10099c *R/scorpion.R
 5a93b021350fdaea8175f0070f82a02f *R/spreadNet.R
 3f966b93682aa324724c87194c70c4a5 *R/tanimotoSimilarity.R
 44c81a93345c21e025677e36dca41475 *R/testEdges.R
 d8ce2de2fbf6bba3b9436112ed275c48 *R/updateDiagonal.R
 5db9dc3f4052467f89823a8dfebe6663 *data/datalist
-5bca0aa5b15913d7c4f5c1b959b40403 *data/scorpionTest.RData
+19f624558229b411986d0304575f3f56 *data/scorpionTest.RData
 fbd3e18955feff20165f7fa1cd27e185 *inst/logoSCORPION.png
 c2c2cebdc6f7d5052fb1d1feaeb7b6e1 *inst/methodSCORPION.png
 57a4159912db844d8038f4a4c6ccd98e *man/circosEdges.Rd

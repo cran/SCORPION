@@ -2,7 +2,7 @@ Package: SCORPION
 Type: Package
 Title: Single Cell Oriented Reconstruction of PANDA Individually
         Optimized Networks
-Version: 1.3.3
+Version: 1.3.4
 Authors@R: c(person("Daniel","Osorio", email = "daniecos@uio.no", role = c("aut","cre"), comment = c(ORCID = "0000-0003-4424-8422")),
   person("Marieke L.","Kuijjer", email = "marieke.kuijjer@ncmbm.uio.no", role = c("aut"), comment = c(ORCID = "0000-0001-6280-3130")))
 Description: Constructs cell-type-specific gene regulatory networks from single-cell RNA-sequencing data. The method implements the SCORPION algorithm, which first aggregates individual cells into super-cells and then applies PANDA (Passing Attributes between Networks for Data Assimilation) to infer transcription factor-target regulatory relationships. It also provides statistical methods for differential edge analysis.
@@ -17,11 +17,11 @@ URL: https://github.com/kuijjerlab/SCORPION
 BugReports: https://github.com/kuijjerlab/SCORPION/issues
 RoxygenNote: 7.3.3
 NeedsCompilation: no
-Packaged: 2026-09-02 14:32:26 UTC; dcosorioh
+Packaged: 2026-09-21 15:34:03 UTC; dcosorioh
 Author: Daniel Osorio [aut, cre] (ORCID:
     <https://orcid.org/0000-0003-4424-8422>),
   Marieke L. Kuijjer [aut] (ORCID:
     <https://orcid.org/0000-0001-6280-3130>)
 Maintainer: Daniel Osorio <daniecos@uio.no>
 Repository: CRAN
-Date/Publication: 2026-09-02 14:50:02 UTC
+Date/Publication: 2026-09-21 16:40:02 UTC
